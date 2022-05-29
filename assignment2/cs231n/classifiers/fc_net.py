@@ -47,7 +47,12 @@ class TwoLayerNet(object):
         # weights and biases using the keys 'W1' and 'b1' and second layer weights #
         # and biases using the keys 'W2' and 'b2'.                                 #
         ############################################################################
-        pass
+        self.params['W1'] = np.random.normal(loc=0, scale=weight_scale, size=(input_dim, hidden_dim))
+        self.params['b1'] = np.zeros(hidden_dim)
+        
+        self.params['W2'] = np.random.normal(loc=0, scale=weight_scale, size=(hidden_dim, num_classes))
+        self.params['b2'] = np.zeros(num_classes)
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -77,7 +82,12 @@ class TwoLayerNet(object):
         # TODO: Implement the forward pass for the two-layer net, computing the    #
         # class scores for X and storing them in the scores variable.              #
         ############################################################################
-        pass
+        W1, b1 = self.params['W1'], self.params['b1']
+        W2, b2 = self.params['W2'], self.params['b2']
+        
+        h1 = np.maximum(0, X.reshape(X.shape[0], -1).dot(W1) + b1)
+        scores = h1.dot(W2) + b2
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -97,7 +107,28 @@ class TwoLayerNet(object):
         # automated tests, make sure that your L2 regularization includes a factor #
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
-        pass
+        num_train = X.shape[0]
+        
+        loss -= np.sum(scores[range(num_train), y])
+        loss += np.sum(np.log(np.sum(np.exp(scores), axis=1)))
+        loss /= num_train
+        
+        loss += 0.5 * self.reg * (np.sum(W1 * W1) + np.sum(W2 * W2))
+        
+        dscores = np.zeros_like(scores)
+        dscores[range(num_train), y] -= 1
+        dscores += np.exp(scores) / np.sum(np.exp(scores), axis=1, keepdims=True)
+        dscores /= num_train
+        
+        dh1 = dscores.dot(W2.T)
+        dh1[h1 == 0] = 0
+        
+        grads['W2'] = (h1.T).dot(dscores) + self.reg * W2
+        grads['b2'] = np.sum(dscores, axis=0)
+        
+        grads['W1'] = (X.reshape(X.shape[0], -1).T).dot(dh1) + self.reg * W1
+        grads['b1'] = np.sum(dh1, axis=0)
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -163,7 +194,23 @@ class FullyConnectedNet(object):
         # beta2, etc. Scale parameters should be initialized to one and shift      #
         # parameters should be initialized to zero.                                #
         ############################################################################
-        pass
+        
+        # first layer
+        self.params['W1'] = np.random.normal(loc=0, scale=weight_scale, size=(input_dim, hidden_dims[0]))
+        self.params['b1'] = np.zeros(hidden_dims[0])
+        
+        for layer_n in range(2, self.num_layers):
+            self.params['W' + str(layer_n)] = np.random.normal(loc=0, scale=weight_scale, 
+                                                               size=(hidden_dims[layer_n - 2], 
+                                                                     hidden_dims[layer_n - 1]))
+            self.params['b' + str(layer_n)] = np.zeros(hidden_dims[layer_n - 1])
+        
+        # last layer
+        self.params['W' + str(self.num_layers)] = np.random.normal(loc=0, scale=weight_scale, 
+                                                                  size=(hidden_dims[self.num_layers - 2], 
+                                                                        num_classes))
+        self.params['b' + str(self.num_layers)] = np.zeros(num_classes)
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -221,7 +268,17 @@ class FullyConnectedNet(object):
         # self.bn_params[1] to the forward pass for the second batch normalization #
         # layer, etc.                                                              #
         ############################################################################
-        pass
+        h = {}
+        W1, b1 = self.params['W1'], self.params['b1']
+        h[1] = np.maximum(0, X.reshape(X.shape[0], -1).dot(W1) + b1)
+        
+        for layer_n in range(2, self.num_layers):
+            Wn, bn = self.params['W' + str(layer_n)], self.params['b' + str(layer_n)]
+            h[layer_n] = np.maximum(0, h[layer_n - 1].dot(Wn) + bn)
+        
+        scores = h[self.num_layers - 1].dot(self.params['W' + str(self.num_layers)]) + \
+                 self.params['b' + str(self.num_layers)]
+        
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -244,7 +301,41 @@ class FullyConnectedNet(object):
         # automated tests, make sure that your L2 regularization includes a factor #
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
-        pass
+        num_train = X.shape[0]
+        
+        loss -= np.sum(scores[range(num_train), y])
+        loss += np.sum(np.log(np.sum(np.exp(scores), axis=1)))
+        loss /= num_train
+        
+        dscores = np.zeros_like(scores)
+        dscores[range(num_train), y] -= 1
+        dscores += np.exp(scores) / np.sum(np.exp(scores), axis=1, keepdims=True)
+        dscores /= num_train
+        
+        
+        grads['W' + str(self.num_layers)] = h[self.num_layers - 1].T.dot(dscores) + \
+                                            self.reg * self.params['W' + str(self.num_layers)]
+        grads['b' + str(self.num_layers)] = np.sum(dscores, axis=0)
+        dh_n = dscores.dot(self.params['W' + str(self.num_layers)].T)
+                
+        for layer_n in range(self.num_layers, 0, -1):
+            Wn = self.params['W' + str(layer_n)]
+            loss += 0.5 * self.reg * np.sum(Wn * Wn)
+            
+            if layer_n == self.num_layers or layer_n == 1:
+                pass
+            else:
+                
+                dh_n[h[layer_n] == 0] = 0
+                
+                grads['W' + str(layer_n)] = h[layer_n - 1].T.dot(dh_n) + self.reg * Wn
+                grads['b' + str(layer_n)] = np.sum(dh_n, axis=0)
+                dh_n = dh_n.dot(Wn.T)
+                
+        dh_n[h[1] == 0] = 0
+        grads['W1'] = X.reshape(X.shape[0], -1).T.dot(dh_n) + self.reg * self.params['W1']
+        grads['b1'] = np.sum(dh_n, axis=0)
+                
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
